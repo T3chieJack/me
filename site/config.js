@@ -1,6 +1,7 @@
 const SITE_LAN_HOST = 'YOUR_SERVER_IP';
 const SITE_PUBLIC_API = '';
-const SITE_TURNSTILE_KEY = '';
+const SITE_TURNSTILE_KEY = '0x4AAAAAAFykwlhK7GE-auCR';
+const LIVE_YEAR_URL = '';
 
 function siteApi() {
     const host = window.location.hostname;

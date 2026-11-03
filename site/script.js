@@ -159,15 +159,14 @@ async function showBlogPosts() {
 
 showBlogPosts();
 
-const LIVE_YEAR_URL = '';
-
 async function showLiveYear() {
     let year = new Date().getFullYear();
 
     if (LIVE_YEAR_URL) {
         try {
             const response = await fetch(LIVE_YEAR_URL, { cache: 'no-store' });
-            if (response.ok) year = (await response.text()).trim();
+            const text = response.ok ? (await response.text()).trim() : '';
+            if (/^\d{4}$/.test(text)) year = text;
         } catch {
             year = new Date().getFullYear();
         }

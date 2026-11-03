@@ -33,6 +33,10 @@ ALLOWED_ORIGINS = {o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").spli
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 BLOG_DIR = os.environ.get("BLOG_OUTPUT_DIR", "")
 SITE_URL = "https://me.stupif.com"
+SITE_NAME = "TechieJack"
+SITE_IMAGE = f"{SITE_URL}/media/og-image.png"
+SITE_HANDLE = "@T3chieDev"
+FEED_SIZE = 20
 SECRETS_FILE = os.environ.get("SECRETS_FILE", "/etc/analytics/secrets.json")
 TURNSTILE_HOSTNAMES = {h.strip() for h in os.environ.get("TURNSTILE_HOSTNAMES", "").split(",") if h.strip()}
 TURNSTILE_HOST = "challenges.cloudflare.com"
@@ -584,24 +588,77 @@ def iso_date(timestamp):
     return datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc).strftime("%Y-%m-%d")
 
 
-def public_page(title, description, canonical, body):
+def iso_time(timestamp):
+    return datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def post_url(slug):
+    return f"{SITE_URL}/posts/{slug}.html"
+
+
+def json_ld(data):
+    return json.dumps(data, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
+def public_page(title, description, canonical, body, kind="website", schema=None, published=None, modified=None):
+    url = f"{SITE_URL}/posts/{canonical}"
+    tags = [
+        f"<title>{html.escape(title)} | {SITE_NAME}</title>",
+        f'<meta name="description" content="{html.escape(description)}">',
+        '<meta name="robots" content="index, follow, max-image-preview:large">',
+        '<meta name="theme-color" content="#000000">',
+        f'<link rel="canonical" href="{html.escape(url)}">',
+        f'<meta property="og:site_name" content="{SITE_NAME}">',
+        f'<meta property="og:title" content="{html.escape(title)}">',
+        f'<meta property="og:description" content="{html.escape(description)}">',
+        f'<meta property="og:type" content="{kind}">',
+        f'<meta property="og:url" content="{html.escape(url)}">',
+        '<meta property="og:locale" content="en_GB">',
+        f'<meta property="og:image" content="{SITE_IMAGE}">',
+        '<meta property="og:image:width" content="1200">',
+        '<meta property="og:image:height" content="630">',
+        '<meta name="twitter:card" content="summary_large_image">',
+        f'<meta name="twitter:creator" content="{SITE_HANDLE}">',
+    ]
+    if published:
+        tags.append(f'<meta property="article:published_time" content="{iso_time(published)}">')
+        tags.append(f'<meta property="article:modified_time" content="{iso_time(modified or published)}">')
+        tags.append(f'<meta property="article:author" content="{SITE_URL}/">')
+    if schema:
+        tags.append(f'<script type="application/ld+json">{json_ld(schema)}</script>')
     return (
         '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{html.escape(title)} | TechieJack</title>"
-        f'<meta name="description" content="{html.escape(description)}">'
-        f'<meta property="og:title" content="{html.escape(title)}">'
-        f'<meta property="og:description" content="{html.escape(description)}">'
-        f'<link rel="canonical" href="{SITE_URL}/posts/{canonical}">'
-        '<link rel="icon" href="../media/favicon.svg" type="image/svg+xml">'
+        + "".join(tags)
+        + '<link rel="icon" href="../media/favicon.svg" type="image/svg+xml">'
+        '<link rel="apple-touch-icon" href="../media/apple-touch-icon.png">'
+        f'<link rel="alternate" type="application/rss+xml" title="{SITE_NAME}\'s blog" href="feed.xml">'
         '<link rel="stylesheet" href="../styles.css">'
         '<script src="../config.js" defer></script><script src="../analytics.js" defer></script>'
         f'</head><body><main class="post">{body}</main></body></html>'
     )
 
 
+def author():
+    return {"@type": "Person", "@id": f"{SITE_URL}/#person", "name": SITE_NAME, "url": f"{SITE_URL}/"}
+
+
 def post_page(post):
     description = post["summary"] or post["title"]
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        "headline": post["title"][:110],
+        "description": description,
+        "url": post_url(post["slug"]),
+        "mainEntityOfPage": post_url(post["slug"]),
+        "datePublished": iso_time(post["published_at"]),
+        "dateModified": iso_time(max(post["updated_at"], post["published_at"])),
+        "inLanguage": "en-GB",
+        "image": SITE_IMAGE,
+        "author": author(),
+        "publisher": author(),
+    }
     return public_page(
         post["title"],
         description,
@@ -610,6 +667,10 @@ def post_page(post):
         f'<h1 class="name">{html.escape(post["title"])}</h1>'
         f'<time class="post-date" datetime="{iso_date(post["published_at"])}">{short_date(post["published_at"])}</time>'
         f'</header>{render_markdown(post["body"])}</article>',
+        kind="article",
+        schema=schema,
+        published=post["published_at"],
+        modified=max(post["updated_at"], post["published_at"]),
     )
 
 
@@ -625,11 +686,55 @@ def post_row(post):
 def posts_index(posts):
     rows = "".join(post_row(post) for post in posts)
     listing = f'<ul class="project-list post-index">{rows}</ul>' if rows else '<p class="post-empty">No posts yet. Check back soon.</p>'
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Blog",
+        "name": f"{SITE_NAME}'s blog",
+        "url": f"{SITE_URL}/posts/index.html",
+        "inLanguage": "en-GB",
+        "author": author(),
+        "blogPost": [
+            {"@type": "BlogPosting", "headline": post["title"][:110], "url": post_url(post["slug"]), "datePublished": iso_time(post["published_at"])}
+            for post in posts[:FEED_SIZE]
+        ],
+    }
     return public_page(
         "Blog",
-        "Posts by TechieJack.",
+        "Posts by TechieJack about projects, self-hosting and tech.",
         "index.html",
         f'<a class="post-back" href="../index.html#blog">Back to home</a><header><h1 class="name">Blog</h1></header>{listing}',
+        schema=schema,
+    )
+
+
+def xml_text(value):
+    return html.escape(CONTROL_CHARS.sub("", value), quote=True)
+
+
+def blog_sitemap(posts):
+    newest = max((max(post["updated_at"], post["published_at"]) for post in posts), default=None)
+    rows = [f"<url><loc>{SITE_URL}/posts/index.html</loc>" + (f"<lastmod>{iso_date(newest)}</lastmod>" if newest else "") + "</url>"]
+    rows += [
+        f'<url><loc>{xml_text(post_url(post["slug"]))}</loc><lastmod>{iso_date(max(post["updated_at"], post["published_at"]))}</lastmod></url>'
+        for post in posts
+    ]
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + "".join(rows) + "</urlset>\n"
+
+
+def blog_feed(posts):
+    items = "".join(
+        f'<item><title>{xml_text(post["title"])}</title><link>{xml_text(post_url(post["slug"]))}</link>'
+        f'<guid isPermaLink="true">{xml_text(post_url(post["slug"]))}</guid>'
+        f'<pubDate>{format_datetime(datetime.datetime.fromtimestamp(post["published_at"], datetime.timezone.utc))}</pubDate>'
+        f'<description>{xml_text(post["summary"] or post["title"])}</description></item>'
+        for post in posts[:FEED_SIZE]
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel>'
+        f"<title>{SITE_NAME}'s blog</title><link>{SITE_URL}/posts/index.html</link>"
+        "<description>Posts by TechieJack about projects, self-hosting and tech.</description><language>en-gb</language>"
+        f'<atom:link href="{SITE_URL}/posts/feed.xml" rel="self" type="application/rss+xml"/>'
+        f"{items}</channel></rss>\n"
     )
 
 
@@ -655,7 +760,7 @@ def publish_blog():
     finally:
         connection.close()
     try:
-        expected = {"index.html", "posts.json"}
+        expected = {"index.html", "posts.json", "sitemap.xml", "feed.xml"}
         for post in posts:
             expected.add(f'{post["slug"]}.html')
             write_public_file(f'{post["slug"]}.html', post_page(post))
@@ -674,6 +779,8 @@ def publish_blog():
             ],
         }
         write_public_file("posts.json", json.dumps(feed))
+        write_public_file("sitemap.xml", blog_sitemap(posts))
+        write_public_file("feed.xml", blog_feed(posts))
         for name in os.listdir(BLOG_DIR):
             if name not in expected and (name.endswith(".html") or name.startswith(".tmp-")):
                 os.unlink(os.path.join(BLOG_DIR, name))

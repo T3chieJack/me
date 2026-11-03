@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://me.stupif.com/sitemap.xml
+Sitemap: https://me.stupif.com/posts/sitemap.xml
