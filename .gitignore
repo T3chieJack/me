@@ -1,0 +1,17 @@
+.*
+!.gitignore
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.env
+secrets*.json
+*.log
+*.bak
+*.tmp
+__pycache__/
+*.pyc
+node_modules/
+Thumbs.db
+Desktop.ini
